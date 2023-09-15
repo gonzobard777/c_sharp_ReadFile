@@ -4,6 +4,12 @@ using Common;
 namespace _01_MSG4;
 
 /*
+ * Проблема Big-endian / Little-endian: https://en.wikipedia.org/wiki/Endianness#Overview
+ * Проблема возникает, если оперировать в памяти с последовательностью больше, чем один БАЙТ.
+ * В памяти байты могут переверрнуться в обратный порядок.
+ * Направление зависит от операционной системы.
+ * Проверяется через: BitConverter.IsLittleEndian
+ *
  * Группа The Co-ordination Group for Meteorological Satellites - CGMS, разработала спецификацию:
  * https://www.cgms-info.org/wp-content/uploads/2021/10/cgms-lrit-hrit-global-specification-(v2-8-of-30-oct-2013).pdf
  * Нас интересует Table 4-1 Primary Header Record, страница 14.
