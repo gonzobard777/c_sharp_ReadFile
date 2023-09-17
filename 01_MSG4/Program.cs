@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using _01_MSG4.Headers;
 using Common;
 
 namespace _01_MSG4;
@@ -18,32 +19,136 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        FromBytes();
-        // ThroughStructure<PrimeHeaderAsSequentialPack1>();
+        Headers_FromBytes();
+        // PrimaryHdr_ThroughStructure<PrimeHeaderAsSequentialPack1>();
     }
 
-    static void FromBytes()
+    static void Headers_FromBytes()
     {
         using var fs = new FileStream(Paths.Get_MSG4_FilePath(), FileMode.Open);
-        var primaryHdr = new byte[8];
-        fs.Read(primaryHdr, 0, 8);
 
-        // 1 байт
-        var hdr_type = primaryHdr[0];
+        var primeHdr = new _0_PrimeHeader();
+        var imgStructHdr = new _1_ImageStructure();
+        var imgNavHdr = new _2_ImageNavigation();
+        var imgDataFunc = new _3_ImageDataFunction();
+        var annotation = new _4_Annotation();
+        var timeStamp = new _5_TimeStamp();
+        var ancillaryText = new _6_AncillaryText();
 
-        // следующие 2 байта
-        var hdr_rec_len = (UInt16)((primaryHdr[1] << 8) + primaryHdr[2]);
+//region Table 4-1 Primary Header Record
+        var buf = new byte[primeHdr.Length];
+        fs.Read(buf, 0, primeHdr.Length);
 
-        // следующий 1 байт
-        var file_type = primaryHdr[3];
+        primeHdr.Type = buf[0];
+        primeHdr.Length = BigEndian.GetUInt16(buf, 1);
+        primeHdr.FileTypeCode = buf[3];
+        primeHdr.TotalHeaderLength = BigEndian.GetUInt32(buf, 4);
+        primeHdr.DataLength = BigEndian.GetUInt64(buf, 8);
+//endregion Table 4-1 Primary Header Record
 
-        // следующие 4 байта
-        var total_hdr_len = (UInt32)((primaryHdr[4] << 24) + (primaryHdr[5] << 16) + (primaryHdr[6] << 8) + primaryHdr[7]);
+
+        // Table 4-4 Image Structure Record
+        if (CheckNextHeaderType(fs) == 1)
+        {
+            buf = new byte[imgStructHdr.Length];
+            fs.Read(buf, 0, imgStructHdr.Length);
+
+            imgStructHdr.Type = buf[0];
+            imgStructHdr.Length = BigEndian.GetUInt16(buf, 1);
+            imgStructHdr.NB_NumberOfBitsPerPixel = buf[3];
+            imgStructHdr.NC_NumberOfColumns = BigEndian.GetUInt16(buf, 4);
+            imgStructHdr.NL_NumberOfLines = BigEndian.GetUInt16(buf, 6);
+            imgStructHdr.CFLG_CompressionFlag = buf[8];
+        }
+
+        // Table 4-5 Image Navigation Record
+        if (CheckNextHeaderType(fs) == 2)
+        {
+            imgNavHdr.ProjName = BigEndian.GetString(fs, 3, 32);
+
+            buf = new byte[imgNavHdr.Length];
+            fs.Read(buf, 0, imgNavHdr.Length);
+
+            imgNavHdr.Type = buf[0];
+            imgNavHdr.Length = BigEndian.GetUInt16(buf, 1);
+            imgNavHdr.CFAC_ColumnScalingFactor = BigEndian.GetInt32(buf, 35);
+            imgNavHdr.LFAC_LineScalingFactor = BigEndian.GetInt32(buf, 39);
+            imgNavHdr.COFF_ColumnOffset = BigEndian.GetInt32(buf, 43);
+            imgNavHdr.LOFF_LineOffset = BigEndian.GetInt32(buf, 47);
+        }
+
+        // Table 4-6 Image Data Function Record
+        if (CheckNextHeaderType(fs) == 3)
+        {
+            buf = new byte[3];
+            fs.Read(buf, 0, 3);
+
+            imgDataFunc.Type = buf[0];
+            imgDataFunc.Length = BigEndian.GetUInt16(buf, 1);
+
+            var textSize = (byte)(annotation.Length - 3);
+            imgDataFunc.DataDefinitionBlock = BigEndian.GetString(fs, 0, textSize);
+            fs.Seek(textSize, SeekOrigin.Current);
+        }
+
+        // Table 4-7 Annotation Record
+        if (CheckNextHeaderType(fs) == 4)
+        {
+            buf = new byte[3];
+            fs.Read(buf, 0, 3);
+
+            annotation.Type = buf[0];
+            annotation.Length = BigEndian.GetUInt16(buf, 1);
+
+            var textSize = (byte)(annotation.Length - 3);
+            annotation.Text = BigEndian.GetString(fs, 0, textSize);
+            fs.Seek(textSize, SeekOrigin.Current);
+        }
+
+        // Table 4-8 Time Stamp Record
+        if (CheckNextHeaderType(fs) == 5)
+        {
+            buf = new byte[timeStamp.Length];
+            fs.Read(buf, 0, timeStamp.Length);
+
+            timeStamp.Type = buf[0];
+            timeStamp.Length = BigEndian.GetUInt16(buf, 1);
+            timeStamp.CDS_P_Field = buf[3];
+            timeStamp.CounterOfDaysFrom1Jan1958 = BigEndian.GetUInt16(buf, 4);
+            timeStamp.MillisecondsOfDay = BigEndian.GetUInt32(buf, 6);
+            timeStamp.WriteDateTime = new DateTime(1958, 1, 1)
+                .AddDays(timeStamp.CounterOfDaysFrom1Jan1958)
+                .AddMilliseconds(timeStamp.MillisecondsOfDay);
+        }
+
+        // 4.2.2.6 Ancillary Text Record
+        if (CheckNextHeaderType(fs) == 6)
+        {
+            buf = new byte[3];
+            fs.Read(buf, 0, 3);
+
+            ancillaryText.Type = buf[0];
+            ancillaryText.Length = BigEndian.GetUInt16(buf, 1);
+
+            var textSize = (byte)(ancillaryText.Length - 3);
+            ancillaryText.Text = BigEndian.GetString(fs, 0, textSize);
+            fs.Seek(textSize, SeekOrigin.Current);
+        }
 
         Console.WriteLine();
     }
 
-    static void ThroughStructure<T>()
+    static byte CheckNextHeaderType(FileStream fs)
+    {
+        var buf = new byte[1];
+        fs.Read(buf, 0, 1);
+        fs.Seek(-1, SeekOrigin.Current);
+
+        return buf[0];
+    }
+
+
+    static void PrimaryHdr_ThroughStructure<T>()
     {
         using var fs = new FileStream(Paths.Get_MSG4_FilePath(), FileMode.Open);
 
